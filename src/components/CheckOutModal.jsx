@@ -1,6 +1,8 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, CreditCard, Banknote, CheckCircle } from "lucide-react";
+const QR_LINK =
+  "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=upi://pay?pa=demo@upi&pn=Demo%20Store&am=100&cu=INR";
 
 const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
   const [step, setStep] = useState(1);
@@ -12,6 +14,10 @@ const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
     paymentMethod: "card",
   });
   const [isSuccess, setIsSuccess] = useState(false);
+  const [qrTimeLeft, setQrTimeLeft] = useState(300);
+  const [qrTimerActive, setQrTimerActive] = useState(false);
+  const [isQrConfirmed, setIsQrConfirmed] = useState(false);
+
   const modalRef = useRef(null);
 
   const handleBackdropClick = (e) => {
@@ -26,6 +32,12 @@ const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    if (step === 2 && formData.paymentMethod === "qr" && !isQrConfirmed) {
+      toast.error("Please complete payment and check the confirmation box");
+      return;
+    }
+
     if (step === 1) {
       setStep(2);
     } else {
@@ -38,6 +50,26 @@ const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
       }, 2000);
     }
   };
+
+  useEffect(() => {
+    let timer;
+
+    if (qrTimerActive && qrTimeLeft > 0) {
+      timer = setInterval(() => {
+        setQrTimeLeft((prev) => prev - 1);
+      }, 1000);
+    }
+
+    if (qrTimeLeft === 0) {
+      // Time over → auto close
+      setQrTimerActive(false);
+      setQrTimeLeft(300);
+      setFormData((prev) => ({ ...prev, paymentMethod: "card" }));
+      onClose();
+    }
+
+    return () => clearInterval(timer);
+  }, [qrTimerActive, qrTimeLeft]);
 
   return (
     <AnimatePresence>
@@ -188,6 +220,85 @@ const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
                             className="ml-auto h-4 w-4 text-blue-600 dark:text-blue-400 focus:ring-blue-500"
                           />
                         </div>
+                        <div
+                          className={`flex items-center p-4 rounded-lg cursor-pointer transition-colors ${
+                            formData.paymentMethod === "qr"
+                              ? "bg-blue-100/50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50"
+                              : "bg-white/30 dark:bg-gray-700/50 border border-gray-200/50 dark:border-gray-600/50 hover:bg-gray-100/50 dark:hover:bg-gray-700/70"
+                          }`}
+                          onClick={() => {
+                            setFormData({ ...formData, paymentMethod: "qr" });
+                            setQrTimeLeft(300);
+                            setQrTimerActive(true);
+                            setIsQrConfirmed(false);
+                          }}
+                        >
+                          <img
+                            src={QR_LINK}
+                            alt="QR"
+                            className="w-6 h-6 mr-3"
+                          />
+                          <span className="text-gray-900 dark:text-white">
+                            UPI / QR Payment
+                          </span>
+                          <input
+                            type="radio"
+                            name="paymentMethod"
+                            checked={formData.paymentMethod === "qr"}
+                            onChange={() => {}}
+                            className="ml-auto h-4 w-4 text-blue-600"
+                          />
+                        </div>
+                        {formData.paymentMethod === "qr" && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="mt-4 p-4 bg-white/60 dark:bg-gray-700/50 rounded-xl text-center"
+                          >
+                            {/* TIMER */}
+                            <p className="text-sm font-semibold text-red-600 mb-2">
+                              Payment expires in{" "}
+                              {Math.floor(qrTimeLeft / 60)
+                                .toString()
+                                .padStart(2, "0")}
+                              :{(qrTimeLeft % 60).toString().padStart(2, "0")}
+                            </p>
+
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                              Scan QR to complete payment
+                            </p>
+
+                            <img
+                              src={QR_LINK}
+                              alt="QR Code"
+                              className="w-40 h-40 mx-auto rounded-lg"
+                            />
+                            {/* PAYMENT CONFIRMATION CHECKBOX */}
+                            <div className="mt-4 flex items-start gap-2 text-left">
+                              <input
+                                type="checkbox"
+                                id="qrConfirm"
+                                checked={isQrConfirmed}
+                                onChange={(e) =>
+                                  setIsQrConfirmed(e.target.checked)
+                                }
+                                className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500"
+                              />
+                              <label
+                                htmlFor="qrConfirm"
+                                className="text-sm text-gray-700 dark:text-gray-300"
+                              >
+                                Please check if your payment is done
+                              </label>
+                            </div>
+                            <label
+                                htmlFor="qrConfirm"
+                                className="text-sm text-gray-700 dark:text-gray-300"
+                              >
+                                 If your payment not done order will not be placed.
+                              </label>
+                          </motion.div>
+                        )}
                       </div>
                     )}
 
@@ -203,11 +314,15 @@ const CheckoutModal = ({ isOpen, onClose, clearCart }) => {
                       )}
                       <button
                         type="submit"
+                        disabled={
+                          formData.paymentMethod === "qr" &&
+                          (!isQrConfirmed || qrTimeLeft === 0)
+                        }
                         className={`px-6 py-2.5 rounded-lg text-white ${
                           step === 1
                             ? "bg-blue-600/90 hover:bg-blue-700/90"
                             : "bg-green-600/90 hover:bg-green-700/90"
-                        } transition-colors`}
+                        } disabled:opacity-50 disabled:cursor-not-allowed transition-colors`}
                       >
                         {step === 1 ? "Continue to Payment" : "Place Order"}
                       </button>
